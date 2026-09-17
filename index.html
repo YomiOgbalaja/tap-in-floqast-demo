@@ -3417,6 +3417,60 @@ function appendMsg(role,text,cls){
   box.scrollTop=box.scrollHeight;
   return div;
 }
+/* Deterministic fallback for the Ask Tap In assistant — a lightweight keyword router over this
+   workspace's own real, simulated data, so a question always gets a grounded answer even when
+   the AI capability isn't available (e.g. viewed outside the Claude Artifact host) or a call fails. */
+function localAssistantAnswer(mode,text){
+  if(mode==='policy'){
+    const hits=searchPolicyLibrary(text);
+    if(!hits.length) return `No exact match in the policy library for "${text}". Try "PTO", "remote work", "PIP", "leveling", "exit interview", or "compensation philosophy".`;
+    return hits.slice(0,3).map(h=>`${h.title} (${h.category}): ${h.summary}`).join('\n\n');
+  }
+  const q=(text||'').toLowerCase();
+  const staff=scopedStaff();
+  const mgrs=scopedManagerPool();
+  const scope=scopeLabel();
+  if(!staff.length) return `No people data in scope for ${scope} right now.`;
+
+  if(/attrition|risk|flight|leav(e|ing)|quit/.test(q)){
+    const top=staff.slice().sort((a,b)=>b.attritionRisk-a.attritionRisk).slice(0,3);
+    return `Highest attrition risk in ${scope}:\n`+top.map(e=>`• ${e.name} (${e.title}) — risk ${e.attritionRisk}/100, engagement ${e.engagement}/100, band ${e.riskBand}`).join('\n');
+  }
+  if(/coach/.test(q)){
+    const c=coachingSuggestions(hrbpDeptsOrManagerDept());
+    if(!c.length) return `No coaching flags in ${scope} right now.`;
+    return `Top coaching priority: ${c[0].mgr.name} — ${c[0].type} (${c[0].priority} priority). ${c[0].text}`;
+  }
+  if(/benchmark|compare|rank/.test(q)){
+    if(!mgrs.length) return `No managers in scope to benchmark.`;
+    const ranked=mgrs.slice().sort((a,b)=>managerAgg(b).avgPerf-managerAgg(a).avgPerf);
+    const top=ranked[0], bottom=ranked[ranked.length-1];
+    return `In ${scope}: ${top.name}'s team leads on performance (${managerAgg(top).avgPerf}/5.0), while ${bottom.name}'s team is lowest (${managerAgg(bottom).avgPerf}/5.0). Company average is ${companyAvgPerf}/5.0.`;
+  }
+  if(/engagement|pulse|sentiment/.test(q)){
+    const avgEng=Math.round(avg(staff.map(e=>e.engagement)));
+    return `Average engagement in ${scope} is ${avgEng}/100 vs. the company average of ${companyAvgEngagement}/100. ${avgEng<companyAvgEngagement?'Worth a listening session to find the driver.':'Tracking at or above company average.'}`;
+  }
+  if(/headcount|team size|how many/.test(q)){
+    return `${scope} covers ${staff.length} people${mgrs.length?` across ${mgrs.length} manager${mgrs.length===1?'':'s'}`:''}.`;
+  }
+  if(/workload|span|latency|bottleneck|structural/.test(q)){
+    if(!mgrs.length || mgrs[0].workloadPressureProxy==null) return `Open Org Diagnostics for the full structural read on ${scope}.`;
+    const busiest=mgrs.slice().sort((a,b)=>(b.workloadPressureProxy||0)-(a.workloadPressureProxy||0))[0];
+    return `${busiest.name} shows the highest workload pressure proxy in scope (${busiest.workloadPressureProxy}/100, span ${busiest.spanOfControl}). See Org Diagnostics for the full structural read.`;
+  }
+  if(/exit|left|departure|offboard/.test(q)){
+    const n=EXIT_RECORDS.length;
+    return n?`${n} exits recorded in the trailing period company-wide, avg exit sentiment ${Math.round(avg(EXIT_RECORDS.map(r=>r.sentiment)))}/100. See Exit Interviews for the full trend.`:'No exit records in this workspace.';
+  }
+  if(/comp|salary|pay|compa.?ratio/.test(q)){
+    return `Comp & Benefits has replacement-cost and pay-positioning detail for ${scope} — open that section for compa-ratio and time-to-fill figures.`;
+  }
+  const avgPerf=round1(avg(staff.map(e=>e.perf)));
+  const avgEng=Math.round(avg(staff.map(e=>e.engagement)));
+  const highRisk=staff.filter(e=>e.riskBand==='High').length;
+  return `Quick snapshot for ${scope}: avg performance ${avgPerf}/5.0, avg engagement ${avgEng}/100, ${highRisk} high-risk report${highRisk===1?'':'s'}. Ask about "attrition risk", "coaching", "benchmark", "engagement", or "workload" for more detail.`;
+}
 async function submitAssistant(){
   if(assistBusy) return;
   const input=document.getElementById('assist-text');
@@ -3431,8 +3485,8 @@ async function submitAssistant(){
   try{
     const sample=await claude.use('sample');
     if(!sample){
-      thinking.remove();
-      appendMsg('sys','The AI assistant isn\'t available in this preview context.');
+      thinking.classList.remove('thinking');
+      thinking.textContent=localAssistantAnswer(mode,text);
       return;
     }
     const sys = mode==='policy' ? POLICY_SYSTEM_PROMPT : ORG_ANALYST_SYSTEM_PROMPT+`\n\n`+
@@ -3445,10 +3499,10 @@ async function submitAssistant(){
       onText:({text:t})=>{ thinking.classList.remove('thinking'); thinking.textContent=t; assistMsgsEl().scrollTop=9e9; }
     });
     thinking.classList.remove('thinking');
-    thinking.textContent=res.text||'(no response)';
+    thinking.textContent=res.text||localAssistantAnswer(mode,text);
   }catch(err){
     thinking.classList.remove('thinking');
-    thinking.textContent='Something went wrong reaching the assistant: '+(err && err.message?err.message:'unknown error');
+    thinking.textContent=localAssistantAnswer(mode,text);
   }finally{
     assistBusy=false;
     document.querySelector('#assist-form button').disabled=false;
