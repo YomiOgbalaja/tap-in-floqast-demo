@@ -869,7 +869,18 @@ function coachingSuggestions(scopeDeptIds){
     }
   });
   const order={High:0,Medium:1,Low:2};
-  return out.sort((a,b)=>order[a.priority]-order[b.priority]);
+  out.sort((a,b)=>order[a.priority]-order[b.priority]);
+  if(out.length) return out;
+  // No manager crossed a hard threshold this cycle — still surface real, data-grounded check-ins
+  // (closest-to-watch managers) instead of leaving the queue blank.
+  return mgrs.slice().sort((a,b)=>{
+    const aggA=managerAgg(a), aggB=managerAgg(b);
+    return (aggA.avgPerf-aggB.avgPerf) || (aggA.avgEngagement-aggB.avgEngagement);
+  }).slice(0,3).map(m=>{
+    const agg=managerAgg(m);
+    return {mgr:m,priority:'Low',type:'Calibration coaching',
+      text:`No red flags this cycle — team performance ${agg.avgPerf}/5.0 and engagement ${agg.avgEngagement}/100 are within normal range. Worth a light-touch check-in with ${m.name.split(' ')[0]} to keep momentum.`};
+  });
 }
 
 /* workflow amplifier suggestions (manager view, "you" scoped) */
@@ -1761,14 +1772,81 @@ function renderAgentRun(run){
       </div>`).join('')||'<div class="empty-note">No drafts returned.</div>'}
   </div>`;
 }
+/* Deterministic fallback/base for the Automation Agent — always grounded in this workspace's
+   own simulated data, so the agent never comes back blank even when the AI capability isn't
+   available (e.g. viewed outside the Claude Artifact host) or a model call fails. */
+function buildLocalAgentRun(hrbp){
+  const staff=hrbpStaff();
+  const mgrs=hrbpManagers();
+  const coaching=coachingSuggestions(hrbpDepts());
+  const atRisk=staff.filter(e=>e.riskBand!=='Low').slice().sort((a,b)=>b.attritionRisk-a.attritionRisk);
+  const lowPerf=staff.filter(e=>e.perf<3.1).slice().sort((a,b)=>a.perf-b.perf);
+
+  const priorities=[];
+  if(atRisk.length){
+    const highCount=atRisk.filter(e=>e.riskBand==='High').length;
+    const n=highCount||atRisk.length;
+    const band=(highCount?'High':atRisk[0].riskBand).toLowerCase();
+    priorities.push({title:`${n} ${band}-risk report${n===1?'':'s'} need${n===1?'s':''} a stay conversation this week`,
+      rationale:`Top signal: ${atRisk[0].name} (${atRisk[0].title}) — risk score ${atRisk[0].attritionRisk}, engagement ${atRisk[0].engagement}/100.`});
+  }
+  if(coaching.length){
+    priorities.push({title:`${coaching[0].mgr.name.split(' ')[0]}'s team needs ${coaching[0].type.toLowerCase()}`, rationale:coaching[0].text});
+  }
+  if(lowPerf.length){
+    const mgrName=empById[lowPerf[0].managerId]?empById[lowPerf[0].managerId].name.split(' ')[0]:'their manager';
+    priorities.push({title:`${lowPerf.length} team member${lowPerf.length===1?'':'s'} below the performance bar`,
+      rationale:`${lowPerf[0].name} is at ${lowPerf[0].perf}/5.0 (company avg ${companyAvgPerf}) — worth a calibration conversation with ${mgrName} ahead of the next cycle.`});
+  }
+  while(priorities.length<3){
+    priorities.push({title:'Client group is broadly healthy this cycle',
+      rationale:`Avg performance ${round1(avg(staff.map(e=>e.perf)))}/5.0, avg engagement ${Math.round(avg(staff.map(e=>e.engagement)))}/100 — keep watching the pulse trend for early signal.`});
+  }
+  priorities.length=3;
+
+  const managerActions=coaching.slice(0,5).map(c=>({manager:c.mgr.name,action:c.text,priority:c.priority}));
+  for(const m of mgrs){
+    if(managerActions.length>=5) break;
+    if(managerActions.some(a=>a.manager===m.name)) continue;
+    const agg=managerAgg(m);
+    managerActions.push({manager:m.name,action:`No red flags this cycle — a light-touch check-in keeps momentum (team perf ${agg.avgPerf}/5.0, engagement ${agg.avgEngagement}/100).`,priority:'Medium'});
+  }
+
+  const stayInterviews=atRisk.slice(0,4).map(e=>({employee:e.name,reason:`${e.riskBand} attrition risk (score ${e.attritionRisk}) · engagement ${e.engagement}/100 · ${e.title}`}));
+  if(!stayInterviews.length && staff.length){
+    const e=staff.slice().sort((a,b)=>a.engagement-b.engagement)[0];
+    stayInterviews.push({employee:e.name,reason:`Lowest engagement in scope this cycle (${e.engagement}/100), risk band Low — still worth a light-touch check-in.`});
+  }
+
+  const draftMessages=[];
+  if(coaching.length){
+    const c=coaching[0];
+    draftMessages.push({channel:'Slack',to:c.mgr.name,subject:`Coaching nudge — ${c.type}`,
+      body:`Hi ${c.mgr.name.split(' ')[0]} — flagging this from this week's Tap In review: ${c.text} Could we grab 15 minutes this week to talk through next steps?`});
+  }
+  const stayTarget=atRisk[0]||staff[0];
+  if(stayTarget){
+    draftMessages.push({channel:'Email',to:stayTarget.name,subject:'Checking in',
+      body:`Hi ${stayTarget.name.split(' ')[0]} — I'd love to grab 20 minutes this week for a quick check-in on how things are going and what would make your role even better. No agenda beyond hearing from you — does Thursday or Friday work?`});
+  }
+  if(draftMessages.length<2 && mgrs.length){
+    const m=mgrs[0];
+    draftMessages.push({channel:'Email',to:m.name,subject:'Weekly check-in',
+      body:`Hi ${m.name.split(' ')[0]} — no red flags on the dashboard this week for your team. Keep up the good work, and flag anything you're seeing on the ground that the data might be missing.`});
+  }
+  draftMessages.length=Math.min(draftMessages.length,2);
+
+  return {priorities,managerActions,stayInterviews,draftMessages};
+}
 async function runHrbpAgent(){
   if(state.agentBusy) return;
   const hrbp=currentHrbp();
   state.agentBusy=true; renderAll();
+  const local=buildLocalAgentRun(hrbp);
   try{
     const sample=await claude.use('sample');
     if(!sample){
-      state.agentRuns[hrbp.id]={generatedAt:new Date().toLocaleString(), priorities:[{title:'AI assistant isn’t available in this preview context.',rationale:''}], managerActions:[], draftMessages:[], stayInterviews:[]};
+      state.agentRuns[hrbp.id]={...local, generatedAt:new Date().toLocaleString()};
       return;
     }
     const sys=`You are the Tap In HRBP Automation Agent, running autonomously for ${hrbp.name}, HR Business Partner for: ${hrbpDepts().map(d=>DEPTS.find(x=>x.id===d).name).join(', ')}. `+
@@ -1780,9 +1858,9 @@ async function runHrbpAgent(){
       ` "draftMessages":[{"channel":"Email"|"Slack","to":string,"subject":string,"body":string}]} // exactly 2 ready-to-send drafts: one coaching nudge to a manager, one stay-interview invite to an employee\n\n`+
       `Return ONLY the JSON object.`;
     const result=await sample.json(sys,{tools:AI_TOOLS, modelTier:'default'});
-    state.agentRuns[hrbp.id]={...result, generatedAt:new Date().toLocaleString()};
+    state.agentRuns[hrbp.id]={...local, ...result, generatedAt:new Date().toLocaleString()};
   }catch(err){
-    state.agentRuns[hrbp.id]={generatedAt:new Date().toLocaleString(), priorities:[{title:'The agent run failed.',rationale:(err&&err.message)?err.message:'Unknown error.'}], managerActions:[], draftMessages:[], stayInterviews:[]};
+    state.agentRuns[hrbp.id]={...local, generatedAt:new Date().toLocaleString()};
   }finally{
     state.agentBusy=false; renderAll();
   }
@@ -2513,14 +2591,59 @@ function renderOrgDiagRun(run){
       </div>
     </div>`).join('') + `<p class="hint">Illustrative prototype output. All calculations are aggregate proxies for this workspace — a human validates causes and owns any resulting decision.</p>`;
 }
+/* Deterministic fallback/base for the bottleneck diagnostic agent — grounded in this workspace's
+   own structural signals, so it never comes back blank when the AI capability isn't available. */
+function buildLocalOrgDiagnostic(){
+  const mgrs=orgDiagScope();
+  const byWorkload=mgrs.slice().sort((a,b)=>b.workloadPressureProxy-a.workloadPressureProxy);
+  const bySpan=mgrs.slice().sort((a,b)=>b.spanOfControl-a.spanOfControl);
+  const byLatency=mgrs.slice().sort((a,b)=>b.decisionLatencyProxy-a.decisionLatencyProxy);
+  const hyps=[];
+  if(byWorkload.length && byWorkload[0].workloadPressureProxy>=ORG_THRESHOLDS.workload){
+    const m=byWorkload[0];
+    hyps.push({title:`Workload pressure is concentrated under ${m.name.split(' ')[0]}`,
+      evidence:`${m.name} (${DEPTS.find(d=>d.id===m.deptId).name}) shows a workload pressure proxy of ${m.workloadPressureProxy}/100, above this workspace's ${ORG_THRESHOLDS.workload} threshold, with a span of ${m.spanOfControl} direct reports.`,
+      confidence:m.workloadPressureProxy>=ORG_THRESHOLDS.workload+15?'High':'Medium',
+      experiment:`Shadow ${m.name.split(' ')[0]}'s week and redistribute 1-2 direct reports or recurring approvals to a peer manager for 30 days.`,
+      owner:m.name, successMeasure:'Workload pressure proxy drops below threshold within one review cycle.'});
+  }
+  if(bySpan.length && bySpan[0].spanOfControl>ORG_THRESHOLDS.span){
+    const m=bySpan[0];
+    hyps.push({title:`Span of control is stretched under ${m.name.split(' ')[0]}`,
+      evidence:`${m.name} manages ${m.spanOfControl} direct reports, above the internal threshold of ${ORG_THRESHOLDS.span} (company median is ${companyMedianSpan}).`,
+      confidence:m.spanOfControl>=ORG_THRESHOLDS.span+4?'High':'Medium',
+      experiment:`Promote or hire a team lead to absorb 2-3 reports and pilot for one quarter.`,
+      owner:m.name, successMeasure:'Span drops to within 2 of the company median without a drop in team engagement.'});
+  }
+  if(byLatency.length && byLatency[0].decisionLatencyProxy>=ORG_THRESHOLDS.latency){
+    const m=byLatency[0];
+    hyps.push({title:`Decision latency is elevated under ${m.name.split(' ')[0]}`,
+      evidence:`${m.name}'s decision latency proxy is ${m.decisionLatencyProxy}/100, above the ${ORG_THRESHOLDS.latency} threshold — a possible approval-bottleneck signal.`,
+      confidence:'Medium',
+      experiment:`Delegate one recurring approval category to a senior IC or peer manager for 30 days and track cycle time.`,
+      owner:m.name, successMeasure:'Decision latency proxy drops below threshold within 30 days.'});
+  }
+  if(!hyps.length){
+    const m=byWorkload[0]||bySpan[0]||byLatency[0];
+    if(m){
+      hyps.push({title:'No manager exceeds an internal threshold this cycle',
+        evidence:`Highest workload pressure in scope is ${m.name} at ${m.workloadPressureProxy}/100 (threshold ${ORG_THRESHOLDS.workload}) — comfortably within range.`,
+        confidence:'Low',
+        experiment:`Re-run this diagnostic next pulse cycle; worth a light-touch check-in with ${m.name.split(' ')[0]} in the meantime.`,
+        owner:m.name, successMeasure:'Structural signals remain within threshold at next review.'});
+    }
+  }
+  return {hypotheses:hyps.slice(0,3)};
+}
 async function runOrgDiagnostic(){
   if(state.orgDiagBusy) return;
   const runKey=state.role+':'+(state.role==='hrbp'?currentHrbp().id:'company');
   state.orgDiagBusy=true; renderAll();
+  const local=buildLocalOrgDiagnostic();
   try{
     const sample=await claude.use('sample');
     if(!sample){
-      state.orgDiagRuns[runKey]={generatedAt:new Date().toLocaleString(), hypotheses:[{title:'AI assistant isn’t available in this preview context.',evidence:'',confidence:'Low',experiment:'',owner:'',successMeasure:''}]};
+      state.orgDiagRuns[runKey]={...local, generatedAt:new Date().toLocaleString()};
       return;
     }
     const sys=ORG_ANALYST_SYSTEM_PROMPT+`\n\nCurrent scope: ${scopeLabel()}. Use the get_org_diagnostics and get_top_attrition_risks tools to pull real figures for this scope before writing anything — never invent numbers. All data is simulated demo data, not a real company.\n\n`+
@@ -2528,9 +2651,9 @@ async function runOrgDiagnostic(){
       `{"hypotheses":[{"title":string,"evidence":string,"confidence":"High"|"Medium"|"Low","experiment":string,"owner":string,"successMeasure":string}]} // 2-3 hypotheses, ranked by impact × evidence strength × reversibility, most impactful first.\n\n`+
       `Return ONLY the JSON object.`;
     const result=await sample.json(sys,{tools:AI_TOOLS, modelTier:'default'});
-    state.orgDiagRuns[runKey]={...result, generatedAt:new Date().toLocaleString()};
+    state.orgDiagRuns[runKey]={...local, ...result, generatedAt:new Date().toLocaleString()};
   }catch(err){
-    state.orgDiagRuns[runKey]={generatedAt:new Date().toLocaleString(), hypotheses:[{title:'The diagnostic run failed.',evidence:(err&&err.message)?err.message:'Unknown error.',confidence:'Low',experiment:'',owner:'',successMeasure:''}]};
+    state.orgDiagRuns[runKey]={...local, generatedAt:new Date().toLocaleString()};
   }finally{
     state.orgDiagBusy=false; renderAll();
   }
