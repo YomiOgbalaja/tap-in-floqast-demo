@@ -1722,10 +1722,12 @@ SECTION_RENDERERS['hrbp:agent']=function(){
       <span class="hint">Autonomous · reads live client-group data</span>
     </div>
     <p class="section-desc" style="margin:0 0 14px">
-      Runs across ${esc(hrbp.name)}'s client groups, pulls current performance, engagement and
-      attrition signals through Tap In's own data tools, and drafts a ready-to-act plan — this
-      week's priorities, manager coaching actions, stay-interview candidates, and outreach drafts
-      you can copy straight into email or Slack.
+      Runs across ${esc(hrbp.name)}'s client groups as a deep, multi-skilled HR operations partner:
+      this week's priorities, manager coaching actions, stay-interview candidates and outreach drafts,
+      plus scenario planning, organizational planning &amp; headcount modeling, executive coaching &amp;
+      leadership development, performance management &amp; calibration logic, change management &amp;
+      internal communications, and employee relations trend analysis — every read pulled through
+      Tap In's own data tools, never invented.
     </p>
     <button class="btn ask" id="run-agent-btn" ${state.agentBusy?'disabled':''}>
       ${state.agentBusy?'⏳ Agent is working…':(run?'⚡ Re-run this week’s agent':'⚡ Run this week’s agent')}
@@ -1734,6 +1736,22 @@ SECTION_RENDERERS['hrbp:agent']=function(){
   </div>
   <div id="agent-output">${run?renderAgentRun(run):`<div class="empty-note">No agent run yet this session. Click "Run this week's agent" — it will call into the same live data as the dashboards above and come back with a concrete plan.</div>`}</div>`;
 };
+const AGENT_MODULE_META=[
+  {key:'scenarioPlanning', icon:'🧮', label:'Scenario planning'},
+  {key:'orgPlanning', icon:'🗂️', label:'Organizational planning & headcount modeling'},
+  {key:'leadershipDev', icon:'🎯', label:'Executive coaching & leadership development'},
+  {key:'calibration', icon:'📐', label:'Performance management & calibration logic'},
+  {key:'changeMgmt', icon:'📣', label:'Change management & internal communications'},
+  {key:'erTrends', icon:'⚖️', label:'Employee relations trend analysis'},
+];
+function agentModuleCard(meta,items){
+  return `<div class="card">
+    <div class="card-head"><h3>${meta.icon} ${esc(meta.label)}</h3></div>
+    <ol class="priority-list">
+      ${(items||[]).map(it=>`<li><strong>${esc(it.title||'')}</strong><div class="subtle">${esc(it.detail||it.rationale||'')}</div></li>`).join('')||'<li class="subtle">Nothing to flag this cycle.</li>'}
+    </ol>
+  </div>`;
+}
 function renderAgentRun(run){
   const tasks=[
     ...(run.managerActions||[]).map((a,i)=>({id:'ma'+i, title:`${a.manager||'Manager'}: ${a.action||''}`, meta:a.priority||'Medium priority'})),
@@ -1770,6 +1788,13 @@ function renderAgentRun(run){
         ${m.subject?`<div class="draft-subject">${esc(m.subject)}</div>`:''}
         <pre class="draft-body">${esc(m.body||'')}</pre>
       </div>`).join('')||'<div class="empty-note">No drafts returned.</div>'}
+  </div>
+  <div class="section-title-wrap" style="margin:6px 0 -4px">
+    <h2 class="section-title" style="font-size:16px">Deeper HR operations modules</h2>
+    <p class="section-desc">Six additional skill areas the agent reasons over every run, grounded in this client group's real data.</p>
+  </div>
+  <div class="grid3">
+    ${AGENT_MODULE_META.map(meta=>agentModuleCard(meta,run[meta.key])).join('')}
   </div>`;
 }
 /* Deterministic fallback/base for the Automation Agent — always grounded in this workspace's
@@ -1836,7 +1861,114 @@ function buildLocalAgentRun(hrbp){
   }
   draftMessages.length=Math.min(draftMessages.length,2);
 
-  return {priorities,managerActions,stayInterviews,draftMessages};
+  return {priorities,managerActions,stayInterviews,draftMessages, ...buildAgentModules(hrbp,staff,mgrs)};
+}
+/* The six deeper autonomous modules — Scenario Planning, Organizational Planning & Headcount
+   Modeling, Executive Coaching & Leadership Development, Performance Management & Calibration
+   Logic, Change Management & Internal Communications, and Employee Relations Trend Analysis —
+   each grounded directly in this workspace's own simulated data. */
+function buildAgentModules(hrbp,staff,mgrs){
+  const depts=hrbpDepts();
+
+  const scenarioPlanning=(()=>{
+    const avgSalary=staff.length?Math.round(avg(staff.map(e=>e.baseSalary))):0;
+    const atRiskN=staff.filter(e=>e.riskBand!=='Low').length;
+    const currentAttrition=round1(avg(depts.map(id=>deptAgg.find(d=>d.id===id).attritionRate)))||0;
+    const retained=round1(staff.length*currentAttrition*0.15/100);
+    const savings=Math.round(retained*avgSalary*0.5);
+    return [{title:'Retention-focused scenario',
+      detail:`Modeling a 15% lift in retention actions (stay interviews + comp review) across ${depts.length} client group${depts.length===1?'':'s'} for the ${atRiskN} at-risk report${atRiskN===1?'':'s'} projects ~${retained} avoided departure${retained===1?'':'s'} and ~$${savings.toLocaleString()} in avoided replacement cost this year. Adjust assumptions in the What-If Scenario Planner.`}];
+  })();
+
+  const orgPlanning=(()=>{
+    const reqs=reqsInScope(depts);
+    const items=[];
+    if(reqs.length){
+      const overBenchmark=reqs.filter(r=>r.daysOpen>r.benchmark);
+      const slowest=reqs.slice().sort((a,b)=>b.daysOpen-a.daysOpen)[0];
+      items.push({title:`${reqs.length} open requisition${reqs.length===1?'':'s'} in scope`,
+        detail:`${overBenchmark.length} of ${reqs.length} are open longer than their time-to-fill benchmark. Slowest: ${slowest.title} at ${slowest.daysOpen} days (benchmark ${slowest.benchmark}).`});
+    }
+    const deptGaps=depts.map(id=>{const d=DEPTS.find(x=>x.id===id); return {d,cur:deptAllStaff(id).length,gap:d.target-deptAllStaff(id).length};}).filter(x=>x.gap!==0).sort((a,b)=>Math.abs(b.gap)-Math.abs(a.gap));
+    if(deptGaps.length){
+      const g=deptGaps[0];
+      items.push({title:`${g.d.name} is ${g.gap>0?`${g.gap} under`:`${Math.abs(g.gap)} over`} its ${g.d.target}-person target`,
+        detail:`Current headcount ${g.cur} vs. target ${g.d.target}. ${g.gap>0?'Consider prioritizing open reqs in this group.':'Confirm the extra headcount is intentional or worth a structure review.'}`});
+    }
+    if(!items.length) items.push({title:'Headcount is on plan', detail:`All ${depts.length} client group${depts.length===1?'':'s'} are at or near target headcount with no open requisitions outstanding.`});
+    return items;
+  })();
+
+  const leadershipDev=(()=>{
+    const items=[];
+    const newMgrs=mgrs.filter(m=>m.tenureMonths<7);
+    if(newMgrs.length){
+      const m=newMgrs[0];
+      items.push({title:`${m.name} is a new manager (${m.tenureMonths} mo. tenure)`,
+        detail:`Leading a ${managerAgg(m).headcount}-person team. Recommend the new-manager coaching cohort and a peer-mentor pairing.`});
+    }
+    const highPot=staff.filter(e=>!e.isManager&&!e.isDirector&&e.potential>=80).sort((a,b)=>b.potential-a.potential);
+    if(highPot.length){
+      items.push({title:`${highPot.length} high-potential contributor${highPot.length===1?'':'s'} ready for a stretch`,
+        detail:`${highPot[0].name} (potential ${highPot[0].potential}/100, ${highPot[0].title}) is the top candidate for a stretch assignment or leadership-track conversation.`});
+    }
+    const lowEngMgrs=mgrs.filter(m=>managerAgg(m).avgEngagement<companyAvgEngagement-6);
+    if(lowEngMgrs.length){
+      const m=lowEngMgrs[0];
+      items.push({title:`${m.name}'s team engagement trails company avg by ${companyAvgEngagement-managerAgg(m).avgEngagement} pts`,
+        detail:`Worth pairing ${m.name.split(' ')[0]} with executive coaching focused on team motivation and listening skills.`});
+    }
+    if(!items.length) items.push({title:'No urgent leadership-development flags', detail:'Managers in scope are within tenure and engagement norms this cycle.'});
+    return items.slice(0,3);
+  })();
+
+  const calibration=(()=>{
+    const items=[];
+    const mgrPerfs=mgrs.map(m=>({m,agg:managerAgg(m)})).filter(x=>x.agg.headcount>=3);
+    if(mgrPerfs.length>=2){
+      const sorted=mgrPerfs.slice().sort((a,b)=>b.agg.avgPerf-a.agg.avgPerf);
+      const high=sorted[0], low=sorted[sorted.length-1];
+      const spread=round1(high.agg.avgPerf-low.agg.avgPerf);
+      if(spread>=0.6){
+        items.push({title:`${spread}-pt rating spread between ${high.m.name.split(' ')[0]} and ${low.m.name.split(' ')[0]}'s teams`,
+          detail:`${high.m.name}'s team averages ${high.agg.avgPerf}/5.0 vs. ${low.m.name}'s ${low.agg.avgPerf}/5.0 — worth a calibration session to confirm this reflects real performance, not rating-anchor drift.`});
+      }
+    }
+    if(staff.length){
+      const farExceeds=staff.filter(e=>e.perfBand==='Far Exceeds').length;
+      if(farExceeds/staff.length>0.25){
+        items.push({title:'Possible rating inflation',
+          detail:`${farExceeds} of ${staff.length} (${round1(farExceeds/staff.length*100)}%) rated "Far Exceeds" this cycle — above a healthy calibration range. Recommend a cross-manager calibration review.`});
+      }
+    }
+    if(!items.length) items.push({title:'Calibration looks healthy', detail:`Performance distribution across ${mgrs.length} manager${mgrs.length===1?'':'s'} is within normal range this cycle.`});
+    return items;
+  })();
+
+  const changeMgmt=(()=>{
+    const spikes=detectSpikes(depts);
+    if(!spikes.length) return [{title:'No communication moments flagged', detail:'No significant engagement or attrition spikes in scope this cycle — steady-state comms cadence is fine.'}];
+    return spikes.slice(0,2).map(s=>({title:`${s.metric} — ${s.dept}`,
+      detail:`${s.text} Recommend a proactive team communication (all-hands note or team huddle) before the next pulse survey to get ahead of the narrative.`}));
+  })();
+
+  const erTrends=(()=>{
+    const cases=ER_CASES.filter(c=>depts.includes(c.deptId));
+    if(!cases.length) return [{title:'No ER cases in scope', detail:'No open or recent Employee Relations cases for these client groups.'}];
+    const open=cases.filter(c=>c.stage!=='Closed');
+    const breached=cases.filter(c=>c.status==='Breached');
+    const byTheme={}; cases.forEach(c=>{byTheme[c.theme]=(byTheme[c.theme]||0)+1;});
+    const topTheme=Object.entries(byTheme).sort((a,b)=>b[1]-a[1])[0];
+    const items=[{title:`${open.length} open case${open.length===1?'':'s'} in scope`,
+      detail:`${breached.length} breached SLA. Most recurring theme: "${topTheme[0]}" (${topTheme[1]} case${topTheme[1]===1?'':'s'}). See ER Tracker for case-level detail.`}];
+    if(breached.length){
+      items.push({title:'SLA breach requires escalation',
+        detail:`${breached.length} case${breached.length===1?'':'s'} past due — escalate to qualified HR/Legal review per the Employee Relations Escalation SOP.`});
+    }
+    return items;
+  })();
+
+  return {scenarioPlanning, orgPlanning, leadershipDev, calibration, changeMgmt, erTrends};
 }
 async function runHrbpAgent(){
   if(state.agentBusy) return;
@@ -1849,13 +1981,20 @@ async function runHrbpAgent(){
       state.agentRuns[hrbp.id]={...local, generatedAt:new Date().toLocaleString()};
       return;
     }
-    const sys=`You are the Tap In HRBP Automation Agent, running autonomously for ${hrbp.name}, HR Business Partner for: ${hrbpDepts().map(d=>DEPTS.find(x=>x.id===d).name).join(', ')}. `+
-      `Use the provided tools to pull real figures before writing anything — never invent numbers. All data is simulated demo data, not a real company.\n\n`+
+    const sys=`You are the Tap In HRBP Automation Agent / Amplifier, running autonomously for ${hrbp.name}, HR Business Partner for: ${hrbpDepts().map(d=>DEPTS.find(x=>x.id===d).name).join(', ')}. `+
+      `You act as a deep, multi-skilled HR operations partner covering scenario planning, organizational planning & headcount modeling, executive coaching & leadership development, performance management & calibration logic, change management & internal communications, and employee relations trend analysis. `+
+      `Use the provided tools (including get_headcount_plan, get_leadership_development_signals, get_performance_calibration_signals, and get_recent_alerts) to pull real figures for EVERY section before writing anything — never invent numbers. All data is simulated demo data, not a real company.\n\n`+
       `Produce a JSON object with EXACTLY these keys and nothing else:\n`+
       `{"priorities":[{"title":string,"rationale":string}], // exactly 3, most urgent first\n`+
       ` "managerActions":[{"manager":string,"action":string,"priority":"High"|"Medium"}], // up to 5 concrete next steps for specific managers\n`+
       ` "stayInterviews":[{"employee":string,"reason":string}], // up to 4 highest attrition-risk people worth a proactive conversation\n`+
-      ` "draftMessages":[{"channel":"Email"|"Slack","to":string,"subject":string,"body":string}]} // exactly 2 ready-to-send drafts: one coaching nudge to a manager, one stay-interview invite to an employee\n\n`+
+      ` "draftMessages":[{"channel":"Email"|"Slack","to":string,"subject":string,"body":string}], // exactly 2 ready-to-send drafts: one coaching nudge to a manager, one stay-interview invite to an employee\n`+
+      ` "scenarioPlanning":[{"title":string,"detail":string}], // 1-2 items: a modeled what-if (retention, headcount, or comp move) grounded in real scope data\n`+
+      ` "orgPlanning":[{"title":string,"detail":string}], // 1-2 items: headcount-vs-target and open-requisition read from get_headcount_plan\n`+
+      ` "leadershipDev":[{"title":string,"detail":string}], // 1-2 items: new-manager support, high-potential stretch candidates, or coaching needs from get_leadership_development_signals\n`+
+      ` "calibration":[{"title":string,"detail":string}], // 1-2 items: rating spread or rating-band skew from get_performance_calibration_signals\n`+
+      ` "changeMgmt":[{"title":string,"detail":string}], // 1-2 items: a communication moment from get_recent_alerts, reframed as a change-management recommendation\n`+
+      ` "erTrends":[{"title":string,"detail":string}]} // 1-2 items: open case volume, SLA status, or recurring theme from get_er_tracker_summary\n\n`+
       `Return ONLY the JSON object.`;
     const result=await sample.json(sys,{tools:AI_TOOLS, modelTier:'default'});
     state.agentRuns[hrbp.id]={...local, ...result, generatedAt:new Date().toLocaleString()};
@@ -3213,8 +3352,8 @@ function renderSuggestChips(){
   if(state.assistMode==='policy'){
     chips=['Do we already have a stay-interview guide?','What\'s our remote work policy?','Is there an SOP for PIPs?','What\'s our comp philosophy on pay equity?'];
   } else if(state.role==='manager') chips=['Who on my team is highest attrition risk?','Summarize my team\'s engagement trend','What should I prioritize this week?'];
-  else if(state.role==='hrbp') chips=['Which manager needs coaching most urgently?','Compare my client groups\' benchmarks','Draft talking points for my exec sync'];
-  else chips=['Which department has the highest attrition risk?','Summarize company-wide performance distribution','What should leadership focus on this quarter?'];
+  else if(state.role==='hrbp') chips=['Which manager needs coaching most urgently?','Compare my client groups\' benchmarks','Are we understaffed anywhere in my client groups?','Who\'s ready for a leadership stretch assignment?','Is any manager\'s rating out of calibration?','What are the recurring ER themes in my client groups?'];
+  else chips=['Which department has the highest attrition risk?','Summarize company-wide performance distribution','Where are we over or under headcount target?','Who are our top succession-ready leaders?','Any calibration outliers across departments?','What should leadership communicate about this quarter?'];
   box.innerHTML=chips.map(c=>`<button class="chip-btn" type="button">${esc(c)}</button>`).join('');
   box.querySelectorAll('.chip-btn').forEach(b=>b.addEventListener('click',()=>{document.getElementById('assist-text').value=b.textContent; submitAssistant();}));
 }
@@ -3229,7 +3368,7 @@ function setAssistMode(mode){
   if(!assistMsgsEl().childElementCount){
     appendMsg('bot', mode==='policy'
       ? 'Hi — I search Tap In\'s internal policy, SOP and intranet library. Ask me if a resource already exists before you draft something new.'
-      : `Hi — I'm your Tap In data analyst. I can see the data for your current view (${scopeLabel()}). Ask me about risk, performance, or coaching, or try a suggestion below.`);
+      : `Hi — I'm your Tap In data analyst. I can see the data for your current view (${scopeLabel()}). Ask me about attrition risk, performance, coaching, headcount & scenario planning, leadership development, calibration, change management, or employee relations trends — or try a suggestion below.`);
   }
 }
 
@@ -3344,6 +3483,44 @@ const AI_TOOLS=[
       const contracts=STRATEGIC_CONTRACTS.map(c=>({id:c.id,name:c.name,cost:contractTalentCost(c),value:c.value,roi:contractROI(c),status:c.status,targetDate:c.targetDate}));
       return {totalAnnualTalentCost:TOTAL_ANNUAL_PAYROLL, contracts};
     }},
+  {name:'get_headcount_plan', description:'Get headcount-vs-target and open requisition detail for every department in the current viewer\'s scope — for organizational planning and headcount modeling.',
+    inputSchema:{type:'object',properties:{}},
+    execute:async()=>{
+      const scope = state.role==='people'? deptAgg.map(d=>d.id) : hrbpDeptsOrManagerDept();
+      return {
+        departments: deptAgg.filter(d=>scope.includes(d.id)).map(d=>({name:d.name,current:d.headcount,target:d.target,gap:d.target-d.headcount})),
+        openRequisitions: reqsInScope(scope).map(r=>({id:r.id,title:r.title,department:DEPTS.find(x=>x.id===r.deptId).name,level:r.level,daysOpen:r.daysOpen,benchmarkDays:r.benchmark,stage:r.stage,candidatesInPipeline:r.candidatesInPipeline})),
+      };
+    }},
+  {name:'get_leadership_development_signals', description:'Get leadership-development signals within scope: new (tenure under 7 months) managers, high-potential individual contributors, and succession-readiness gaps — for executive coaching and leadership development.',
+    inputSchema:{type:'object',properties:{}},
+    execute:async()=>{
+      const mgrs=scopedManagerPool();
+      const staff=scopedStaff();
+      return {
+        newManagers: mgrs.filter(m=>m.tenureMonths<7).map(m=>({name:m.name,department:DEPTS.find(d=>d.id===m.deptId).name,tenureMonths:m.tenureMonths,teamSize:managerAgg(m).headcount})),
+        highPotential: staff.filter(e=>!e.isManager&&!e.isDirector&&e.potential>=80).sort((a,b)=>b.potential-a.potential).slice(0,8).map(e=>({name:e.name,title:e.title,department:DEPTS.find(d=>d.id===e.deptId).name,potential:e.potential})),
+        successionGaps: mgrs.filter(m=>!successionCandidates(m).some(c=>c.readiness!=='Development needed')).map(m=>({manager:m.name,department:DEPTS.find(d=>d.id===m.deptId).name})),
+      };
+    }},
+  {name:'get_performance_calibration_signals', description:'Get manager-level average performance and company-wide rating-band distribution within scope — to check for calibration drift, rating inflation, or manager-to-manager rating spread.',
+    inputSchema:{type:'object',properties:{}},
+    execute:async()=>{
+      const mgrs=scopedManagerPool().map(m=>({m,agg:managerAgg(m)})).filter(x=>x.agg.headcount>=3);
+      const staff=scopedStaff();
+      const byBand={}; staff.forEach(e=>{byBand[e.perfBand]=(byBand[e.perfBand]||0)+1;});
+      return {
+        managerAvgPerformance: mgrs.map(x=>({manager:x.m.name,department:DEPTS.find(d=>d.id===x.m.deptId).name,teamSize:x.agg.headcount,avgPerformance:x.agg.avgPerf})),
+        ratingBandDistribution: Object.entries(byBand).map(([band,count])=>({band,count,pct:staff.length?round1(count/staff.length*100):0})),
+        companyAvgPerformance: companyAvgPerf,
+      };
+    }},
+  {name:'get_recent_alerts', description:'Get recently detected attrition/engagement spikes and ER case-volume alerts within scope — for change-management and internal-communication planning.',
+    inputSchema:{type:'object',properties:{}},
+    execute:async()=>{
+      const scope = state.role==='people'? DEPTS.map(d=>d.id) : hrbpDeptsOrManagerDept();
+      return detectSpikes(scope);
+    }},
 ];
 const POLICY_TOOLS=[
   {name:'search_policy_library', description:'Search internal company policies, SOPs, and intranet resources by keyword. Returns matching document titles, categories, and summaries.',
@@ -3400,7 +3577,7 @@ function openAssistant(){
   if(!assistMsgsEl().childElementCount){
     appendMsg('bot', state.assistMode==='policy'
       ? 'Hi — I search Tap In\'s internal policy, SOP and intranet library. Ask me if a resource already exists before you draft something new.'
-      : `Hi — I'm your Tap In data analyst. I can see the data for your current view (${scopeLabel()}). Ask me about risk, performance, or coaching, or try a suggestion below.`);
+      : `Hi — I'm your Tap In data analyst. I can see the data for your current view (${scopeLabel()}). Ask me about attrition risk, performance, coaching, headcount & scenario planning, leadership development, calibration, change management, or employee relations trends — or try a suggestion below.`);
   }
   document.getElementById('assist-text').focus();
 }
@@ -3441,6 +3618,57 @@ function localAssistantAnswer(mode,text){
     if(!c.length) return `No coaching flags in ${scope} right now.`;
     return `Top coaching priority: ${c[0].mgr.name} — ${c[0].type} (${c[0].priority} priority). ${c[0].text}`;
   }
+  if(/scenario|what.?if|modeling|projected/.test(q)){
+    const depts=hrbpDeptsOrManagerDept();
+    const avgSalary=staff.length?Math.round(avg(staff.map(e=>e.baseSalary))):0;
+    const atRiskN=staff.filter(e=>e.riskBand!=='Low').length;
+    const currentAttrition=round1(avg(depts.map(id=>deptAgg.find(d=>d.id===id).attritionRate)))||0;
+    const retained=round1(staff.length*currentAttrition*0.15/100);
+    const savings=Math.round(retained*avgSalary*0.5);
+    return `Modeled scenario for ${scope}: a 15% lift in retention actions for the ${atRiskN} at-risk report${atRiskN===1?'':'s'} projects ~${retained} avoided departure${retained===1?'':'s'} and ~$${savings.toLocaleString()} in avoided replacement cost. Open the What-If Scenario Planner to adjust assumptions.`;
+  }
+  if(/understaff|overstaff|headcount target|open req|requisition|backfill|hiring plan/.test(q)){
+    const depts=hrbpDeptsOrManagerDept();
+    const reqs=reqsInScope(depts);
+    const gaps=depts.map(id=>{const d=DEPTS.find(x=>x.id===id); return {d,gap:d.target-deptAllStaff(id).length};}).filter(x=>x.gap!==0).sort((a,b)=>Math.abs(b.gap)-Math.abs(a.gap));
+    if(!gaps.length && !reqs.length) return `${scope} is at headcount target with no open requisitions.`;
+    const parts=[];
+    if(gaps.length) parts.push(`${gaps[0].d.name} is ${gaps[0].gap>0?`${gaps[0].gap} under`:`${Math.abs(gaps[0].gap)} over`} its ${gaps[0].d.target}-person target`);
+    if(reqs.length) parts.push(`${reqs.length} open req${reqs.length===1?'':'s'} in scope, ${reqs.filter(r=>r.daysOpen>r.benchmark).length} past their time-to-fill benchmark`);
+    return parts.join('. ')+'.';
+  }
+  if(/leadership|succession|high.?potential|stretch assignment|new manager|development plan/.test(q)){
+    const newMgrs=mgrs.filter(m=>m.tenureMonths<7);
+    const highPot=staff.filter(e=>!e.isManager&&!e.isDirector&&e.potential>=80).sort((a,b)=>b.potential-a.potential);
+    const parts=[];
+    if(highPot.length) parts.push(`Top stretch candidate: ${highPot[0].name} (potential ${highPot[0].potential}/100, ${highPot[0].title})`);
+    if(newMgrs.length) parts.push(`${newMgrs.length} new manager${newMgrs.length===1?'':'s'} under 7 months tenure worth a coaching cohort`);
+    if(!parts.length) return `No urgent leadership-development flags in ${scope} this cycle.`;
+    return parts.join('. ')+'.';
+  }
+  if(/calibrat|rating (spread|inflation|drift)|inflat/.test(q)){
+    const mgrPerfs=mgrs.map(m=>({m,agg:managerAgg(m)})).filter(x=>x.agg.headcount>=3);
+    if(mgrPerfs.length<2) return `Not enough managers with 3+ reports in ${scope} to check calibration spread.`;
+    const sorted=mgrPerfs.slice().sort((a,b)=>b.agg.avgPerf-a.agg.avgPerf);
+    const high=sorted[0], low=sorted[sorted.length-1];
+    const spread=round1(high.agg.avgPerf-low.agg.avgPerf);
+    return `${high.m.name}'s team averages ${high.agg.avgPerf}/5.0 vs. ${low.m.name}'s ${low.agg.avgPerf}/5.0 — a ${spread}-pt spread. ${spread>=0.6?'Worth a calibration session to confirm this reflects real performance, not rating-anchor drift.':'Within a normal range.'}`;
+  }
+  if(/change management|communicat|rollout|announce|internal comms/.test(q)){
+    const depts=hrbpDeptsOrManagerDept();
+    const spikes=detectSpikes(depts);
+    if(!spikes.length) return `No communication-worthy spikes in ${scope} this cycle — steady-state cadence is fine.`;
+    return `${spikes[0].text} Recommend a proactive team communication before the next pulse survey.`;
+  }
+  if(/employee relations|\ber case|grievance|harassment|recurring theme/.test(q)){
+    const depts=hrbpDeptsOrManagerDept();
+    const cases=ER_CASES.filter(c=>depts.includes(c.deptId));
+    if(!cases.length) return `No ER cases in ${scope}.`;
+    const open=cases.filter(c=>c.stage!=='Closed');
+    const byTheme={}; cases.forEach(c=>{byTheme[c.theme]=(byTheme[c.theme]||0)+1;});
+    const topTheme=Object.entries(byTheme).sort((a,b)=>b[1]-a[1])[0];
+    return `${open.length} open case${open.length===1?'':'s'} in ${scope}. Most recurring theme: "${topTheme[0]}" (${topTheme[1]} case${topTheme[1]===1?'':'s'}). See ER Tracker for detail.`;
+  }
   if(/benchmark|compare|rank/.test(q)){
     if(!mgrs.length) return `No managers in scope to benchmark.`;
     const ranked=mgrs.slice().sort((a,b)=>managerAgg(b).avgPerf-managerAgg(a).avgPerf);
@@ -3469,7 +3697,7 @@ function localAssistantAnswer(mode,text){
   const avgPerf=round1(avg(staff.map(e=>e.perf)));
   const avgEng=Math.round(avg(staff.map(e=>e.engagement)));
   const highRisk=staff.filter(e=>e.riskBand==='High').length;
-  return `Quick snapshot for ${scope}: avg performance ${avgPerf}/5.0, avg engagement ${avgEng}/100, ${highRisk} high-risk report${highRisk===1?'':'s'}. Ask about "attrition risk", "coaching", "benchmark", "engagement", or "workload" for more detail.`;
+  return `Quick snapshot for ${scope}: avg performance ${avgPerf}/5.0, avg engagement ${avgEng}/100, ${highRisk} high-risk report${highRisk===1?'':'s'}. Ask about "attrition risk", "coaching", "benchmark", "engagement", "headcount", "leadership development", "calibration", "change management", or "employee relations" for more detail.`;
 }
 async function submitAssistant(){
   if(assistBusy) return;
@@ -3491,6 +3719,7 @@ async function submitAssistant(){
     }
     const sys = mode==='policy' ? POLICY_SYSTEM_PROMPT : ORG_ANALYST_SYSTEM_PROMPT+`\n\n`+
       `The current viewer's persona is: ${scopeLabel()}. Only discuss data within their scope — never claim visibility into data outside it. `+
+      `Beyond bottleneck diagnostics, you can also go deep on: scenario planning, organizational planning & headcount modeling, executive coaching & leadership development, performance management & calibration logic, change management & internal communications, and employee relations trend analysis — use get_headcount_plan, get_leadership_development_signals, get_performance_calibration_signals, get_recent_alerts, get_er_tracker_summary, and get_coaching_suggestions as relevant to the question. `+
       `Use the provided tools to look up real figures before answering; never invent numbers. Be concise (2-6 sentences or a short list) unless the question needs a ranked list of hypotheses. `+
       `All data is simulated demo data, not a real company — you can say so if asked.`;
     const res=await sample([{role:'user',content:sys+'\n\nQuestion: '+text}],{
