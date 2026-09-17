@@ -416,12 +416,12 @@ const usedNames=new Set();
 const LOCATIONS=["Austin, TX","Denver, CO","New York, NY","Remote — US","Los Angeles, CA","Charlotte, NC"];
 const DEPTS=[
   {id:'eng',name:'Engineering',target:112},
-  {id:'content',name:'Content Production',target:68},
-  {id:'cx',name:'Customer Experience',target:64},
-  {id:'sales',name:'Ad Sales',target:54},
+  {id:'content',name:'Product Design',target:68},
+  {id:'cx',name:'Customer Success',target:64},
+  {id:'sales',name:'Sales',target:54},
   {id:'product',name:'Product',target:40},
   {id:'marketing',name:'Marketing',target:34},
-  {id:'data',name:'Data & Analytics',target:29},
+  {id:'data',name:'Quality & Data Platform',target:29},
   {id:'ga',name:'G&A (Finance, Legal, People)',target:26},
 ];
 const DEPT_COLOR={eng:'--cat-1',content:'--cat-2',cx:'--cat-3',sales:'--cat-4',product:'--cat-5',marketing:'--cat-6',data:'--cat-7',ga:'--cat-8'};
@@ -438,14 +438,14 @@ const HRBPS=[
 function hrbpForDept(deptId){return HRBPS.find(h=>h.depts.includes(deptId));}
 
 const TITLES_IC={
-  eng:['Software Engineer I','Software Engineer II','Senior Software Engineer','Staff Engineer','QA Engineer','DevOps Engineer'],
-  content:['Production Associate','Producer','Senior Producer','Video Editor','Broadcast Technician','Content Strategist'],
-  cx:['Support Specialist','Sr. Support Specialist','Customer Success Manager','CX Operations Analyst'],
-  sales:['Account Executive','Sr. Account Executive','Ad Sales Coordinator','Partnerships Manager'],
-  product:['Product Manager','Sr. Product Manager','Product Analyst','UX Designer'],
-  marketing:['Marketing Specialist','Growth Marketing Manager','Brand Designer','Lifecycle Marketing Manager'],
-  data:['Data Analyst','Sr. Data Analyst','Analytics Engineer','BI Developer'],
-  ga:['Financial Analyst','Staff Accountant','People Ops Coordinator','Legal Counsel','Recruiter'],
+  eng:['Software Engineer I','Software Engineer II','Senior Software Engineer','Staff Software Engineer','Senior Staff Software Engineer','DevOps Engineer'],
+  content:['Associate Product Designer','Product Designer','Senior Product Designer','Staff Product Designer, AI','UX Researcher','Design Systems Lead'],
+  cx:['Support Specialist','Sr. Support Specialist','Customer Success Manager','Senior Technical Support Engineer','CX Operations Analyst'],
+  sales:['Business Development Representative','Account Executive','Sr. Account Executive','Solutions Consultant'],
+  product:['Associate Product Manager','Product Manager','Sr. Product Manager','Product Manager, Ecosystem','Forward Deployed Data Engineer'],
+  marketing:['Marketing Specialist','Field Marketing Manager','Brand Designer','Lifecycle Marketing Manager'],
+  data:['Data Analyst','Sr. Data Analyst','Analytics Engineer','Senior Quality Engineer','Senior Staff Engineer, Data'],
+  ga:['Financial Analyst','Staff Accountant','People Business Partner','Principal People Business Partner','Legal Counsel','Forward Deployed Accountant'],
 };
 
 let empSeq=1000;
@@ -724,8 +724,8 @@ function detectEmployeeSpikes(e){
 }
 const LEVELS=[
   {id:'IC1', title:'Associate', minCompetency:1.6, minLms:40, blurb:'Learning core workflows under close guidance.'},
-  {id:'IC2', title:'Contributor', minCompetency:2.1, minLms:55, blurb:'Executes independently on well-defined work.'},
-  {id:'IC3', title:'Senior Contributor', minCompetency:2.7, minLms:65, blurb:'Owns projects end-to-end; mentors newer teammates.'},
+  {id:'IC2', title:'Professional', minCompetency:2.1, minLms:55, blurb:'Executes independently on well-defined work.'},
+  {id:'IC3', title:'Senior', minCompetency:2.7, minLms:65, blurb:'Owns projects end-to-end; mentors newer teammates.'},
   {id:'IC4', title:'Staff', minCompetency:3.4, minLms:75, blurb:'Sets technical or functional direction across a team.'},
   {id:'IC5', title:'Principal', minCompetency:4.1, minLms:85, blurb:'Shapes strategy across multiple teams or the org.'},
 ];
@@ -1277,7 +1277,7 @@ function renderPersonaContext(){
     el.innerHTML=`Acting as HRBP<select id="sel-hrbp">${opts}</select>`;
     document.getElementById('sel-hrbp').addEventListener('change',e=>{state.asHrbpId=e.target.value; renderAll();});
   } else {
-    el.innerHTML=`People Team<br><span class="subtle">Company-wide visibility · ${TOTAL_HC.toLocaleString()} employees</span>
+    el.innerHTML=`People Team<br><span class="subtle">FloQast-wide visibility · ${TOTAL_HC.toLocaleString()} FloQasters</span>
       <select id="sel-access" style="margin-top:7px">
         <option value="standard" ${state.accessLevel==='standard'?'selected':''}>Access level: People Team</option>
         <option value="cpo" ${state.accessLevel==='cpo'?'selected':''}>Access level: CPO / Executive</option>
@@ -1297,7 +1297,7 @@ function renderNav(){
 function topbarTitle(){
   if(state.role==='manager'){const m=currentManager();return [`Team overview — ${m.name}`, `${DEPTS.find(d=>d.id===m.deptId).name} · ${managerAgg(m).headcount} direct reports`];}
   if(state.role==='hrbp'){const h=currentHrbp();return [`${h.name}'s client groups`, h.depts.map(d=>DEPTS.find(x=>x.id===d).name).join(' · ')];}
-  return ['Company-wide people analytics', `${TOTAL_HC.toLocaleString()} employees across ${DEPTS.length} departments`];
+  return ['FloQast people analytics', `${TOTAL_HC.toLocaleString()} FloQasters across ${DEPTS.length} departments · By accountants, for accountants`];
 }
 
 function renderTopbar(){
@@ -1822,7 +1822,7 @@ function buildExecReport(scopeLabel, staff, mgrsInScope, deptIds, extra){
   const overBenchmark=reqs.filter(r=>r.daysOpen>r.benchmark);
 
   const lines=[];
-  lines.push(`TAP IN — EXECUTIVE SUMMARY`);
+  lines.push(`TAP IN — EXECUTIVE SUMMARY  ·  FloQast Demo Build`);
   lines.push(`Scope: ${scopeLabel}`);
   lines.push(`Generated: ${new Date().toISOString().slice(0,10)}  ·  Period: trailing ${state.range} months`);
   lines.push('='.repeat(60));
@@ -1973,6 +1973,20 @@ SECTION_RENDERERS['people:overview']=function(){
     <div class="kpi"><div class="label">Company avg. performance</div><div class="value">${companyAvgPerf}<span class="unit">/ 5.0</span></div></div>
     <div class="kpi"><div class="label">Company avg. engagement</div><div class="value">${companyAvgEngagement}<span class="unit">/ 100</span></div>${deltaEl(companyEngagementSeries[11]-companyEngagementSeries[0],{suffix:' pts YTD'})}</div>
     <div class="kpi kpi-link" data-nav="attrition"><div class="label">Attrition rate (annualized est.)</div><div class="value">${companyAttritionRate}<span class="unit">%</span></div>${deltaEl(companyAttritionRate-companyAttritionRatePrev,{goodIsUp:false,suffix:' pts'})}</div>
+  </div>
+  <div class="card" style="background:var(--accent-soft); border-color:var(--accent);">
+    <div class="card-head"><h3>FloQast Ways of Working</h3><span class="hint">Our five non-negotiable values — the lens for calibration, coaching &amp; promotion narratives</span></div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px;">
+      ${[['Determination','Push ourselves to be better and hold each other accountable.'],
+         ['Open Minds','Explore our curiosities and believe in the power of diversity.'],
+         ['Candor','Find comfort in autonomy — stay transparent and reliable.'],
+         ['Enthusiasm','Bold and genuine; we like to have fun.'],
+         ['Care','Prioritize empathy and invest in building connections.']]
+        .map(([n,d])=>`<div style="background:var(--paper-1); border:1px solid var(--line); border-radius:10px; padding:10px 12px;">
+          <div style="font-weight:700; color:var(--accent-ink); font-size:12.5px;">${esc(n)}</div>
+          <div style="font-size:11.5px; color:var(--ink-700); margin-top:3px;">${esc(d)}</div>
+        </div>`).join('')}
+    </div>
   </div>
   <div class="grid2">
     <div class="card">
@@ -2153,7 +2167,7 @@ SECTION_RENDERERS['people:workforce']=function(){
   return `
   <div class="section-title-wrap" style="margin-bottom:2px">
     <h2 class="section-title">Workforce planner</h2>
-    <p class="section-desc">Competency coverage and succession bench strength across every team — built for HR and executive leadership planning conversations.</p>
+    <p class="section-desc">Competency coverage and succession bench strength across every FloQast team — built for HR and executive leadership planning conversations, calibrated against the FloQast job architecture (IC1–IC5, M1–M3) and Ways of Working.</p>
     <span class="pill neutral" style="margin-top:6px">Visible to: HR &amp; Executive Leadership</span>
   </div>
   <div class="kpi-row">
@@ -2215,7 +2229,7 @@ SECTION_RENDERERS['people:talent']=function(){
       <td>${barCell(e.potential,100,'var(--accent)')}</td></tr>`).join('')}</tbody></table></div>
   </div>
   <div class="card">
-    <div class="card-head"><h3>Job levels &amp; leveling framework</h3><span class="hint">IC track · minimums to be considered ready</span></div>
+    <div class="card-head"><h3>FloQast job architecture</h3><span class="hint">IC track (Associate → Professional → Senior → Staff → Principal) · minimums to be considered ready</span></div>
     <div class="table-wrap"><table><thead><tr><th>Level</th><th>Title</th><th>Min. competency</th><th>Min. LMS completion</th><th>What it looks like</th></tr></thead>
     <tbody>${LEVELS.map(l=>`<tr><td class="name">${esc(l.id)}</td><td>${esc(l.title)}</td><td class="tabular">${l.minCompetency} / 5.0</td><td class="tabular">${l.minLms}%</td><td class="subtle">${esc(l.blurb)}</td></tr>`).join('')}</tbody></table></div>
   </div>
@@ -3120,6 +3134,8 @@ const POLICY_LIBRARY=[
     summary:'Cases are triaged into SLA tiers by category (5–20 days). Breached or high-severity cases auto-escalate to the ER Tracker\'s escalation banner here in Tap In and require qualified HR/Legal review — never resolved by the AI assistant.'},
   {title:'Job Levels & Career Framework', category:'Career', tags:['leveling','career framework','promotion','job description','ic levels'],
     summary:'IC1–IC5 framework with minimum competency and LMS-completion thresholds per level, detailed in Talent Planning → Job Levels & Leveling Framework. Promotion packets go through the standard calibration cycle.'},
+  {title:'FloQast Ways of Working (Company Values)', category:'Culture', tags:['values','ways of working','culture','determination','open minds','candor','enthusiasm','care','floqast'],
+    summary:'FloQast\'s five Ways of Working — Determination ("push ourselves to be better and hold each other accountable"), Open Minds ("explore our curiosities and believe in the power of diversity"), Candor ("comfort in autonomy, transparent and reliable"), Enthusiasm ("bold or genuine, not afraid to have fun"), and Care ("prioritize empathy and invest in building connections") — anchor performance calibration, coaching language, and promotion narratives across this workspace.'},
 ];
 function searchPolicyLibrary(query){
   const q=(query||'').toLowerCase();
