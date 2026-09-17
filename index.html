@@ -918,7 +918,7 @@ function rangeMonths(){return rangeSlice(MONTHS);}
 
 const SECTIONS={
   manager:[['overview','Overview'],['roster','Team Roster'],['pulse','Pulse Trends'],['amplifier','Amplifier']],
-  hrbp:[['overview','Overview'],['benchmark','Benchmarking'],['scenario','Scenario Planner'],['attrition','Attrition Watch'],['coaching','Coaching Queue'],['comp','Comp & Benefits'],['ertracker','ER Tracker'],['orgdiag','Org Diagnostics'],['alerts','Alert Center'],['agent','Automation Agent'],['reports','Exec Reports']],
+  hrbp:[['overview','Overview'],['benchmark','Benchmarking'],['scenario','Scenario Planner'],['attrition','Attrition Watch'],['coaching','Coaching Queue'],['comp','Comp & Benefits'],['ertracker','ER Tracker'],['orgdiag','Org Diagnostics'],['alerts','Alert Center'],['agent','Automation Agent / Amplifier'],['reports','Exec Reports']],
   people:[['overview','Company Overview'],['orgchart','Org Chart'],['performance','Performance & Ranking'],['workforce','Workforce Planner'],['talent','Talent Planning'],['succession','Succession Planning'],['scenario','Scenario Planner'],['attrition','Attrition Trends'],['exit','Exit Interviews'],['comp','Comp & Benefits'],['ertracker','ER Tracker'],['orgdiag','Org Diagnostics'],['alerts','Alert Center'],['integrations','HRIS Integrations'],['architecture','Data Architecture'],['reports','Exec Reports'],['cporoi','Talent Cost & ROI']],
 };
 const ROLE_META={
@@ -1707,7 +1707,7 @@ SECTION_RENDERERS['hrbp:agent']=function(){
   return `
   <div class="card agent-intro">
     <div class="card-head">
-      <h3>Tap In Automation Agent</h3>
+      <h3>Tap In Automation Agent / Amplifier</h3>
       <span class="hint">Autonomous · reads live client-group data</span>
     </div>
     <p class="section-desc" style="margin:0 0 14px">
